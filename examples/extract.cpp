@@ -1,15 +1,17 @@
-#include <fat16/fat16.h>
+#include <fat/fat.h>
 
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <vector>
 
-#include <experimental/filesystem>
+#include <filesystem>
 
-namespace fs = std::experimental::filesystem;
+#include <iostream>
 
-static void extract_file(Fat16::Image &img, Fat16::Entry &entry, const std::string &path) {
+namespace fs = std::filesystem;
+
+static void extract_file(Fat::Image &img, Fat::Entry &entry, const std::string &path) {
     const std::u16string filename_16 = entry.get_filename();
     const std::string filename = path + std::string(filename_16.begin(), filename_16.end());
 
@@ -38,15 +40,15 @@ static void extract_file(Fat16::Image &img, Fat16::Entry &entry, const std::stri
     fclose(f);
 }
 
-static void traverse_directory(Fat16::Image &img, Fat16::Entry mee, std::string dir_path) {
+static void traverse_directory(Fat::Image &img, Fat::Entry mee, std::string dir_path) {
     fs::create_directories(dir_path);
 
     while (img.get_next_entry(mee)) {
-        if (mee.entry.file_attributes & (int)Fat16::EntryAttribute::DIRECTORY) {
+        if (mee.entry.file_attributes & (int)Fat::EntryAttribute::DIRECTORY) {
             // Also check if it's not the back folder (. and ..)
             // This can be done by gathering the name
-            if (mee.entry.get_entry_type_from_filename() != Fat16::EntryType::DIRECTORY) {
-                Fat16::Entry baby;
+            if (mee.entry.get_entry_type_from_filename() != Fat::EntryType::DIRECTORY) {
+                Fat::Entry baby;
                 if (!img.get_first_entry_dir(mee, baby))
                     break;
 
@@ -56,7 +58,8 @@ static void traverse_directory(Fat16::Image &img, Fat16::Entry mee, std::string 
             }
         }
 
-        if (mee.entry.file_attributes & (int)Fat16::EntryAttribute::ARCHIVE) {
+        if ((mee.entry.file_attributes & (int)Fat::EntryAttribute::ARCHIVE) ||
+            (!(mee.entry.file_attributes & (int)Fat::EntryAttribute::DIRECTORY) && (mee.entry.file_size != 0))) {
             extract_file(img, mee, dir_path);
         }
     }
@@ -68,20 +71,20 @@ int main(int argc, char **argv) {
     }
     
     FILE *f = fopen(argv[1], "rb");
-    Fat16::Image img(f,
+    Fat::Image img(f,
         // Read hook
         [](void *userdata, void *buffer, std::uint32_t size) -> std::uint32_t {
             return static_cast<std::uint32_t>(fread(buffer, 1, size, (FILE*)userdata));
         },
         // Seek hook
         [](void *userdata, std::uint32_t offset, int mode) -> std::uint32_t {
-        fseek((FILE*)userdata, offset, (mode == Fat16::IMAGE_SEEK_MODE_BEG ? SEEK_SET :
-            (mode == Fat16::IMAGE_SEEK_MODE_CUR ? SEEK_CUR : SEEK_END)));
+        fseek((FILE*)userdata, offset, (mode == Fat::IMAGE_SEEK_MODE_BEG ? SEEK_SET :
+            (mode == Fat::IMAGE_SEEK_MODE_CUR ? SEEK_CUR : SEEK_END)));
 
         return ftell((FILE*)userdata);
     });
 
-    Fat16::Entry first;
+    Fat::Entry first;
     traverse_directory(img, first, "");
 
     fclose(f);

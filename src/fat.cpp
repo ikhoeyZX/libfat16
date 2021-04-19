@@ -1,22 +1,55 @@
 #include <cstdio>
-#include <fat16/fat16.h>
+#include <fat/fat.h>
 #include <cstddef>
 #include <iostream>
 #include <algorithm>
 
-namespace Fat16 {
+namespace Fat {
     // https://www.win.tue.nl/~aeb/linux/fs/fat/fat-1.html
     // reserved blocks -> fat -> root directory -> data area
-    std::uint32_t BootBlock::fat_region_start() const {
+    std::uint32_t BootBlockBase::fat_region_start() const {
         return num_reserved_blocks * bytes_per_block;
     }
+    
+    std::uint32_t BootBlockBase::universal_num_blocks_per_fat() const {
+        std::uint32_t real_num_blocks_per_fat = num_blocks_per_fat;
+        if (real_num_blocks_per_fat == 0) {
+            const BootBlockFAT32 &self = static_cast<const BootBlockFAT32&>(*this);
+            real_num_blocks_per_fat = self.num_blocks_per_fat32;
+        }
 
-    std::uint32_t BootBlock::root_directory_region_start() const {
-        return fat_region_start() + (num_fat * num_blocks_per_fat) * bytes_per_block;
+        return real_num_blocks_per_fat;
     }
 
-    std::uint32_t BootBlock::data_region_start() const {
+    std::uint32_t BootBlockBase::universal_total_block_count() const {
+        std::uint32_t real_block_count = num_blocks_in_image_op1;
+        if (real_block_count == 0) {
+            real_block_count = num_blocks_in_image_op2;
+        }
+
+        return real_block_count;
+    }
+
+    std::uint32_t BootBlockBase::root_directory_region_start() const {
+        return fat_region_start() + (num_fat * universal_num_blocks_per_fat()) * bytes_per_block;
+    }
+
+    std::uint32_t BootBlockBase::data_region_start() const {
         return root_directory_region_start() + (num_root_dirs * sizeof(FundamentalEntry));
+    }
+
+    Type BootBlockBase::fat_type() const {
+        const std::size_t total_size = universal_total_block_count() * bytes_per_block;
+        const std::size_t data_size = total_size - data_region_start();
+
+        const std::size_t allocation_unit_count = data_size / bytes_per_block / num_blocks_per_allocation_unit;
+        if (allocation_unit_count < 4085) {
+            return TYPE_FAT12;
+        } else if (allocation_unit_count < 65525) {
+            return TYPE_FAT16;
+        }
+
+        return TYPE_FAT32;
     }
 
     std::string FundamentalEntry::get_filename() {
@@ -61,32 +94,64 @@ namespace Fat16 {
     
     ClusterID Image::get_successor_cluster(const ClusterID target) {
         const std::uint32_t current = get_current_image_offset();
+        const Type fat_type = boot_block->fat_type();
 
-        // Seek to beginning of the FAT
-        seek_func(userdata, boot_block.fat_region_start() + (target * 2), IMAGE_SEEK_MODE_BEG);
         ClusterID next = 0;
-    
-        if (read_func(userdata, &next, sizeof(ClusterID)) != sizeof(ClusterID)) {
-            return 0;
+
+        if (fat_type != TYPE_FAT12) {
+            const std::uint32_t bytes_per_id = (fat_type == TYPE_FAT16) ? 2 : 4;
+
+            // Seek to beginning of the FAT
+            seek_func(userdata, boot_block->fat_region_start() + (target * bytes_per_id), IMAGE_SEEK_MODE_BEG);
+
+            if (fat_type == TYPE_FAT16) {
+                std::uint16_t next_16bit = 0;
+
+                if (read_func(userdata, &next_16bit, bytes_per_id) != bytes_per_id) {
+                    return 0;
+                }
+
+                next = next_16bit;
+            } else {
+                if (read_func(userdata, &next, bytes_per_id) != bytes_per_id) {
+                    return 0;
+                }
+
+                // Only the lower 28-bits are used
+                next &= 0x0FFFFFFF;
+            }
+        } else {
+            seek_func(userdata, boot_block->fat_region_start() + (target + target / 2), IMAGE_SEEK_MODE_BEG);
+
+            std::uint16_t temp1 = 0;
+            if (read_func(userdata, &temp1, 2) != 2) {
+                return 0;
+            }
+
+            if (target & 1) {
+                next = (temp1 >> 4);
+            } else {
+                next = (temp1 & 0x0FFF);
+            }
         }
-        
+   
         seek_func(userdata, current, IMAGE_SEEK_MODE_BEG);
         return next;
     }
 
     std::uint32_t Image::bytes_per_cluster() const {
-        return boot_block.bytes_per_block * boot_block.num_blocks_per_allocation_unit;
+        return boot_block->bytes_per_block * boot_block->num_blocks_per_allocation_unit;
     }
 
     std::uint32_t Image::read_from_cluster(std::uint8_t *dest_buffer, const std::uint32_t offset, const ClusterID starting_cluster,
         const std::uint32_t size) {
         // Calculate total number of cluster we need to traverse
-        const std::uint32_t total_block_to_read = (size + boot_block.bytes_per_block - 1) / boot_block.bytes_per_block;
-        const std::uint32_t total_cluster_to_read = (total_block_to_read + boot_block.num_blocks_per_allocation_unit - 1)
-            / boot_block.num_blocks_per_allocation_unit;
+        const std::uint32_t total_block_to_read = (size + boot_block->bytes_per_block - 1) / boot_block->bytes_per_block;
+        const std::uint32_t total_cluster_to_read = (total_block_to_read + boot_block->num_blocks_per_allocation_unit - 1)
+            / boot_block->num_blocks_per_allocation_unit;
 
-        std::uint32_t from_start_cluster_dist = offset / boot_block.bytes_per_block;
-        from_start_cluster_dist = (from_start_cluster_dist) / boot_block.num_blocks_per_allocation_unit;
+        std::uint32_t from_start_cluster_dist = offset / boot_block->bytes_per_block;
+        from_start_cluster_dist = (from_start_cluster_dist) / boot_block->num_blocks_per_allocation_unit;
 
         std::uint32_t offset_in_that_cluster = offset % bytes_per_cluster();
 
@@ -99,7 +164,7 @@ namespace Fat16 {
         }
 
         // Add the FAT with the boot block, then add the root directory entries size
-        offset_start_data_area = boot_block.data_region_start();
+        offset_start_data_area = boot_block->data_region_start();
         offset_start_data_area += offset_in_that_cluster;
 
         // Let's seek to that place.
@@ -127,14 +192,14 @@ namespace Fat16 {
     }
 
     bool Image::get_next_entry(Entry &entry) {
-        if (entry.cursor_record / 32 >= boot_block.num_root_dirs) {
+        if (entry.cursor_record / 32 >= boot_block->num_root_dirs) {
             return false;
         }
 
         std::uint32_t offset_root_dir = 0;
 
         // Add the FAT with the boot block, then add the root directory entries size
-        offset_root_dir = boot_block.root_directory_region_start();
+        offset_root_dir = boot_block->root_directory_region_start();
         seek_func(userdata, offset_root_dir + entry.cursor_record, IMAGE_SEEK_MODE_BEG);
 
         LongFileNameEntry extended_entry;
@@ -161,7 +226,7 @@ namespace Fat16 {
                 
                 break;
             }
-        } while (true && (entry.cursor_record / 32 != boot_block.num_root_dirs));
+        } while (true && (entry.cursor_record / 32 != boot_block->num_root_dirs));
 
         // Try to do fundamental entry read
         if (entry.root) {
@@ -194,8 +259,25 @@ namespace Fat16 {
         , seek_func(seek_func)
         , userdata(userdata) {
         seek_func(userdata, 0, IMAGE_SEEK_MODE_BEG);
-        if (read_func(userdata, &boot_block, sizeof(BootBlock)) != sizeof(BootBlock)) {
+        BootBlockBase base_scout;
+
+        if (read_func(userdata, &base_scout, sizeof(BootBlockBase)) != sizeof(BootBlockBase)) {
             // TODO:
+        } else {
+            seek_func(userdata, 0, IMAGE_SEEK_MODE_BEG);
+
+            if ((base_scout.num_blocks_in_image_op1 == 0) || (base_scout.num_blocks_per_fat == 0)) {
+                // Read the FAT32 header variant
+                boot_block = std::make_unique<BootBlockFAT32>();
+                if (read_func(userdata, boot_block.get(), sizeof(BootBlockFAT32)) != sizeof(BootBlockFAT32)) {
+                    // TODO
+                }
+            } else {
+                boot_block = std::make_unique<BootBlockUFAT32>();
+                if (read_func(userdata, boot_block.get(), sizeof(BootBlockUFAT32)) != sizeof(BootBlockUFAT32)) {
+                    // TODO
+                }
+            }
         }
     }
 

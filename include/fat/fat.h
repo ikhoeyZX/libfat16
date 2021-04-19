@@ -1,13 +1,19 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
-
 #include <vector>
 
-namespace Fat16 {
+namespace Fat {
+    enum Type {
+        TYPE_FAT12 = 0,
+        TYPE_FAT16 = 1,
+        TYPE_FAT32 = 2
+    };
+
     #pragma pack(push, 1)
-    struct BootBlock {
+    struct BootBlockBase {
         std::uint8_t jump_code[3];
         std::uint8_t manufacturer_description[8];
         std::uint16_t bytes_per_block;
@@ -22,6 +28,17 @@ namespace Fat16 {
         std::uint16_t num_heads;
         std::uint32_t num_hidden_blocks;
         std::uint32_t num_blocks_in_image_op2;      ///< Total number of block in this images. Option 2
+
+        std::uint32_t fat_region_start() const;
+        std::uint32_t root_directory_region_start() const;
+        std::uint32_t data_region_start() const;
+        std::uint32_t universal_num_blocks_per_fat() const;
+        std::uint32_t universal_total_block_count() const;
+
+        Type fat_type() const;
+    };
+
+    struct BootBlockUFAT32: public BootBlockBase {
         std::uint16_t physical_driver_num;
         std::uint8_t extended_boot_record_signature;
         std::uint32_t volume_sig_num;
@@ -29,10 +46,24 @@ namespace Fat16 {
         char file_sys_id[8];
         std::uint8_t bootstrap_code[0x1C0];
         std::uint16_t boot_block_sig;
+    };
 
-        std::uint32_t fat_region_start() const;
-        std::uint32_t root_directory_region_start() const;
-        std::uint32_t data_region_start() const;
+    struct BootBlockFAT32: public BootBlockBase {
+        std::uint32_t num_blocks_per_fat32;
+        std::uint16_t ext_flags;
+        std::uint16_t fs_ver;
+        std::uint32_t root_cluster;
+        std::uint16_t fs_info;
+        std::uint16_t bk_boot_sec;          ///< Sector number in the reserved area of the volume of a copy of the boot record
+        std::uint8_t reserved1[12];
+        std::uint8_t drv_num;
+        std::uint8_t reserved2;
+        std::uint8_t boot_sig;
+        std::uint32_t vol_id;
+        char volume_label[11];
+        char file_sys_id[8];
+        std::uint8_t bootstrap_code[0x1C0];
+        std::uint16_t boot_block_sig;
     };
     #pragma pack(pop)
     
@@ -84,7 +115,7 @@ namespace Fat16 {
     #pragma pack(pop)
 
     // Numbered from 2
-    using ClusterID = std::uint16_t;
+    using ClusterID = std::uint32_t;
 
     struct Entry {
     private:
@@ -115,7 +146,8 @@ namespace Fat16 {
     };
 
     struct Image {
-        BootBlock boot_block;
+        std::unique_ptr<BootBlockBase> boot_block;
+
         ImageReadFunc read_func;
         ImageSeekFunc seek_func;
         void *userdata;
@@ -166,7 +198,7 @@ namespace Fat16 {
         ClusterID get_successor_cluster(const ClusterID target);
     };
 
-    static_assert(sizeof(BootBlock) == 512, "Boot block size doesn't match to what expected.");
+    static_assert(sizeof(BootBlockUFAT32) == 512, "Boot block size doesn't match to what expected.");
     static_assert(sizeof(FundamentalEntry) == 32, "Fundamental entry size doesn't match to what expected.");
     static_assert(sizeof(LongFileNameEntry) == 32, "LFN entry size doesn't match to what expected.");
 }

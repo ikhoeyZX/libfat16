@@ -1,17 +1,17 @@
-project(FAT16)
+project(FAT)
 cmake_minimum_required(VERSION 3.2)
 
 option(BUILD_EXAMPLES "Build the examples project as well" OFF)
 
-add_library(FAT16
-    include/fat16/fat16.h
-    src/fat16.cpp)
+add_library(FAT
+    include/fat/fat.h
+    src/fat.cpp)
 
-target_include_directories(FAT16 PUBLIC include)
+target_include_directories(FAT PUBLIC include)
 
 if (BUILD_EXAMPLES)
-add_executable(FAT16_EXTRACT
+add_executable(FAT_EXTRACT
     examples/extract.cpp)
 
-target_link_libraries(FAT16_EXTRACT PRIVATE FAT16)
+target_link_libraries(FAT_EXTRACT PRIVATE FAT)
 endif()
