@@ -322,8 +322,15 @@ namespace Fat {
         }
 
         // Use fundamental name.
-        std::string final_name = entry.get_filename() + std::string(entry.filename_ext, 3);
+        std::string final_name = entry.get_filename();
+        std::string extension = std::string(entry.filename_ext, 3);
+
         while (final_name.length() > 0 && final_name.back() == ' ') final_name.pop_back();
+        while (extension.length() > 0 && extension.back() == ' ') extension.pop_back();
+
+        if (!extension.empty()) {
+            final_name += "." + extension;
+        }
 
         return std::u16string(final_name.begin(), final_name.end());
     }
