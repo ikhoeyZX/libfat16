@@ -60,9 +60,10 @@ namespace Fat {
             fname = fname.substr(0, sizeof(filename) / sizeof(char));
         }
 
+        /*
         if (etype != EntryType::FILE && fname.length() > 0) {
             fname.erase(0, 1);
-        }
+        }*/
 
         if (fname.length() > 0 && fname[0] == 0x05) {
             // Transform it to E5, since that's the actual name
@@ -172,7 +173,7 @@ namespace Fat {
 
         std::uint32_t total_bytes_left_to_read = size;
 
-        for (std::uint8_t i = 0; i < total_cluster_to_read; i++) {
+        for (std::uint32_t i = 0; i < total_cluster_to_read; i++) {
             // Seek to the given cluster.
             seek_func(userdata, offset_start_data_area + (current_cluster - 2) * bytes_per_cluster(), IMAGE_SEEK_MODE_BEG);
             const std::uint32_t size_to_read_this_take = std::min<std::uint32_t>(bytes_per_cluster(), total_bytes_left_to_read);
@@ -192,7 +193,7 @@ namespace Fat {
     }
 
     bool Image::get_next_entry(Entry &entry) {
-        if (entry.cursor_record / 32 >= boot_block->num_root_dirs) {
+        if (entry.root == 0 && entry.cursor_record / 32 >= boot_block->num_root_dirs) {
             return false;
         }
 
@@ -325,8 +326,8 @@ namespace Fat {
         std::string final_name = entry.get_filename();
         std::string extension = std::string(entry.filename_ext, 3);
 
-        while (final_name.length() > 0 && final_name.back() == ' ') final_name.pop_back();
-        while (extension.length() > 0 && extension.back() == ' ') extension.pop_back();
+        while (final_name.length() > 0 && (final_name.back() == ' ' || extension.back() == '\0')) final_name.pop_back();
+        while (extension.length() > 0 && (extension.back() == ' ' || extension.back() == '\0')) extension.pop_back();
 
         if (!extension.empty()) {
             final_name += "." + extension;
