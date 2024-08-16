@@ -208,7 +208,7 @@ namespace Fat16 {
                 volatile int i = 0;
 
                 while (extended_entries[j].name_part_1[i] != 0 && i < 5) {
-                    final_name += extended_entries[j].name_part_1[i++];
+                    final_name += extended_entries[j].name_part_1[i = i+1];
                 }
 
                 if (i < 5 && extended_entries[j].name_part_1[i] == 0) {
@@ -218,7 +218,7 @@ namespace Fat16 {
                 i = 0;
 
                 while (extended_entries[j].name_part_2[i] != 0 && i < 6) {
-                    final_name += extended_entries[j].name_part_2[i++];
+                    final_name += extended_entries[j].name_part_2[i = i+1];
                 }
                 
                 if (i < 6 && extended_entries[j].name_part_2[i] == 0) {
@@ -228,7 +228,7 @@ namespace Fat16 {
                 i = 0;
 
                 while (extended_entries[j].name_part_3[i] != 0 && i < 2) {
-                    final_name += extended_entries[j].name_part_3[i++];
+                    final_name += extended_entries[j].name_part_3[i = i+1];
                 }
                 
                 if (i < 2 && extended_entries[j].name_part_3[i] == 0) {
