@@ -205,33 +205,42 @@ namespace Fat16 {
             std::u16string final_name;
 
             for (std::intptr_t j = extended_entries.size() - 1; j >= 0; j--) {
-                volatile int i = 0;
+                volatile int vi = 0;
+                int i = 0;
 
                 while (extended_entries[j].name_part_1[i] != 0 && i < 5) {
-                    final_name = final_name + extended_entries[j].name_part_1[i = i+1];
+                    final_name += extended_entries[j].name_part_1[i++];
+                    vi = i;
                 }
 
                 if (i < 5 && extended_entries[j].name_part_1[i] == 0) {
+                    vi = i;
                     break;
                 }
                 
                 i = 0;
+                vi = i;
 
                 while (extended_entries[j].name_part_2[i] != 0 && i < 6) {
-                    final_name = final_name + extended_entries[j].name_part_2[i = i+1];
+                    final_name += extended_entries[j].name_part_2[i++];
+                    vi = i;
                 }
                 
                 if (i < 6 && extended_entries[j].name_part_2[i] == 0) {
+                    vi = i;
                     break;
                 }
 
                 i = 0;
+                vi = i;
 
                 while (extended_entries[j].name_part_3[i] != 0 && i < 2) {
-                    final_name = final_name + extended_entries[j].name_part_3[i = i+1];
+                    final_name += extended_entries[j].name_part_3[i++];
+                    vi = i;
                 }
                 
                 if (i < 2 && extended_entries[j].name_part_3[i] == 0) {
+                    vi = i;
                     break;
                 }
             }
